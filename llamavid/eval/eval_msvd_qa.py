@@ -1,4 +1,5 @@
-import openai
+# import openai
+from openai import OpenAI
 import os
 import argparse
 import json
@@ -6,6 +7,7 @@ import ast
 from multiprocessing.pool import Pool
 from tqdm import tqdm
 
+client = None
 
 def parse_args():
     parser = argparse.ArgumentParser(description="question-answer-generation-using-gpt-3")
@@ -14,13 +16,13 @@ def parse_args():
     parser.add_argument("--output_json", required=True, help="The path to save annotation final combined json file.")
     parser.add_argument("--num_tasks", required=True, type=int, help="Number of splits.")
     parser.add_argument("--num_chunks", default=1, type=int, help="Result splits")
-    parser.add_argument("--api_key", required=True, type=str, help="OpenAI API key")
-    parser.add_argument("--api_base", default=None, type=str, help="OpenAI API base")
+    # parser.add_argument("--api_key", required=True, type=str, help="OpenAI API key")
+    # parser.add_argument("--api_base", default=None, type=str, help="OpenAI API base")
     args = parser.parse_args()
     return args
 
 
-def annotate(prediction_set, caption_files, output_dir):
+def annotate(prediction_set, caption_files, output_dir, model_name):
     """
     Evaluates question and answer pairs using GPT-3
     Returns a score for correctness.
@@ -33,8 +35,9 @@ def annotate(prediction_set, caption_files, output_dir):
         pred = qa_set['pred']
         try:
             # Compute the correctness score
-            completion = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
+            # completion = openai.ChatCompletion.create(
+            completion = client.chat.completions.create(
+                model=model_name,
                 messages=[
                     {
                         "role": "system",
@@ -59,10 +62,12 @@ def annotate(prediction_set, caption_files, output_dir):
                             "DO NOT PROVIDE ANY OTHER OUTPUT TEXT OR EXPLANATION. Only provide the Python dictionary string. "
                             "For example, your response should look like this: {'pred': 'yes', 'score': 4.8}."
                     }
-                ]
+                ],
+                stream=False
             )
             # Convert response to a Python dictionary.
-            response_message = completion["choices"][0]["message"]["content"]
+            response_message = completion.choices[0].message.content
+            # response_message = completion["choices"][0]["message"]["content"]
             response_dict = ast.literal_eval(response_message)
             result_qa_pair = [response_dict, qa_set]
 
@@ -130,10 +135,13 @@ def main():
         qa_set = {"q": question, "a": answer, "pred": pred}
         prediction_set[id] = qa_set
 
-    # Set the OpenAI API key.
-    openai.api_key = args.api_key # Your API key here
-    if args.api_base:
-        openai.api_base = args.api_base # Your API base here
+    # # Set the OpenAI API key.
+    # openai.api_key = args.api_key # Your API key here
+    # if args.api_base:
+    #     openai.api_base = args.api_base # Your API base here
+    global client
+    client = OpenAI(api_key=os.getenv("AI_API_KEY"), base_url=os.getenv("AI_BASE_URL"))
+    print(os.getenv('AI_MODEL'))
     num_tasks = args.num_tasks
 
     # While loop to ensure that all captions are processed.
@@ -156,7 +164,7 @@ def main():
             # Split tasks into parts.
             part_len = len(incomplete_files) // num_tasks
             all_parts = [incomplete_files[i:i + part_len] for i in range(0, len(incomplete_files), part_len)]
-            task_args = [(prediction_set, part, args.output_dir) for part in all_parts]
+            task_args = [(prediction_set, part, args.output_dir, os.getenv("AI_MODEL")) for part in all_parts]
 
             # Use a pool of workers to process the files in parallel.
             with Pool() as pool:
