@@ -855,10 +855,10 @@ class LazySupervisedDataset(Dataset):
                             if not os.path.exists(os.path.join(image_folder, image_file)):
                                 image_file = image_file.replace(".jpg", ".png")
 
-                        # convert image for VG dataset
-                        elif 'VG_100K' in image_file:
-                            image_file = image_file.replace('VG_100K_2', 'images')
-                            image_file = image_file.replace('VG_100K', 'images')
+                        # # convert image for VG dataset
+                        # elif 'VG_100K' in image_file:
+                        #     image_file = image_file.replace('VG_100K_2', 'images')
+                        #     image_file = image_file.replace('VG_100K', 'images')
                     
                     image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
                     if self.data_args.image_aspect_ratio == 'pad':

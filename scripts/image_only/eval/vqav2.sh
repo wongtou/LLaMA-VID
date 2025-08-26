@@ -6,7 +6,8 @@ IFS=',' read -ra GPULIST <<< "$gpu_list"
 
 CHUNKS=${#GPULIST[@]}
 
-CKPT="llama-vid/llama-vid-7b-full-336"
+CKPT="llama-vid/llama-vid-7b-full-224"
+# CKPT="llama-vid/llama-vid-7b-full-336"
 SPLIT="llava_vqav2_mscoco_test-dev2015"
 
 for IDX in $(seq 0 $((CHUNKS-1))); do
