@@ -22,11 +22,13 @@ def parse_args():
     parser.add_argument("--files_dir", required=True, help="Path to read the shot detection result from.")
     parser.add_argument("--feat_dir", required=True, help="The output dir to save the features in.")
     parser.add_argument("--vision_tower", default="./model_zoo/LAVIS/eva_vit_g.pth", help="Vision backbone to process the video.")
-    parser.add_argument("--image_processor", defalut="./llamavid/processor/clip-patch14-224", help="Image processor to pre-process the video.")
+    parser.add_argument("--image_processor", default="./llamavid/processor/clip-patch14-224", help="Image processor to pre-process the video.")
     parser.add_argument("--index", type=int, default=0, help="index of chunk.")
     parser.add_argument("--chunk", type=int, default=1, help="number of chunk.")
     parser.add_argument("--infer_batch", required=False, type=int, default=48,
                         help="Number of frames/images to perform batch inference.")
+    parser.add_argument("--compute_feat", action="store_true",
+                        help="If set, skip videos whose feature files already exist.")
     args = parser.parse_args()
     return args
 
@@ -60,8 +62,12 @@ def load_subtitles(file_path):
                 subtitle = {}
         elif ' --> ' in line:
             start, end = line.split(' --> ')
-            subtitle['start_time'] = get_second(start)
-            subtitle['end_time'] = get_second(end)
+            try:
+                subtitle['start_time'] = get_second(start)
+                subtitle['end_time'] = get_second(end)
+            except:
+                print(file_path)
+                exit(0)
         else:
             if subtitle.get('text', None):
                 subtitle['text'] += ' ' + line

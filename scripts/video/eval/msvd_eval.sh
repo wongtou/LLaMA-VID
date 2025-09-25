@@ -1,14 +1,19 @@
 #!/bin/bash
 
-CUDA_VISIBLE_DEVICES='0,1,2,3'
+# CUDA_VISIBLE_DEVICES='0'
+CUDA_VISIBLE_DEVICES='4,5,6,7'
+# CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7'
 gpu_list="${CUDA_VISIBLE_DEVICES:-0}"
 IFS=',' read -ra GPULIST <<< "$gpu_list"
 
 CHUNKS=${#GPULIST[@]}
 
-CKPT="llama-vid/llama-vid-7b-full-224-video-fps-1"
-OPENAIKEY=""
-OPENAIBASE=""
+# CKPT="llama-vid/llama-vid-7b-full-224-video-fps-1"
+CKPT="llama-vid-7b-full-224-video-fps-1"
+# CKPT="llama-vid/llama-vid-7b-full-224-long-video"
+# CKPT="llama-vid-7b-full-224-long-video"
+# OPENAIKEY=""
+# OPENAIBASE=""
 
 # for IDX in $(seq 0 $((CHUNKS-1))); do
 #     CUDA_VISIBLE_DEVICES=${GPULIST[$IDX]} python llamavid/eval/model_msvd_qa.py \

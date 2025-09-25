@@ -6,6 +6,7 @@ import json
 import ast
 from multiprocessing.pool import Pool
 from tqdm import tqdm
+import re
 
 client = None
 
@@ -42,6 +43,7 @@ def annotate(prediction_set, caption_files, output_dir, model_name):
                     {
                         "role": "system",
                         "content": 
+                            # "Reasoning: low\n"    # for gpt-oss
                             "You are an intelligent chatbot designed for evaluating the correctness of generative outputs for question-answer pairs. "
                             "Your task is to compare the predicted answer with the correct answer and determine if they match meaningfully. Here's how you can accomplish the task:"
                             "------"
@@ -53,6 +55,7 @@ def annotate(prediction_set, caption_files, output_dir, model_name):
                     {
                         "role": "user",
                         "content":
+                            # "/no_think"       # for qwen3:8b
                             "Please evaluate the following video-based question-answer pair:\n\n"
                             f"Question: {question}\n"
                             f"Correct Answer: {answer}\n"
@@ -67,6 +70,12 @@ def annotate(prediction_set, caption_files, output_dir, model_name):
             )
             # Convert response to a Python dictionary.
             response_message = completion.choices[0].message.content
+            # print(response_message)
+            # exit(0)
+            # response_message = re.sub(r'(?is)\b<?think\b[^>]*>.*?</think\s*>|</?think\b[^>]*>\s*', '', response_message).strip()
+            # response_message = (t:=re.sub(r'([{,]\s*)([A-Za-z_]\w*)\s*:', r'\1"\2":', re.sub(r'{%.*?%}', '', response_message, flags=re.S).replace("\\'", "'").replace('\\"','"')))[t.find('{'):t.rfind('}')+1]
+            # response_message = next((l for l in response_message.splitlines() if "pred" in l), None)
+            # print(response_message)
             # response_message = completion["choices"][0]["message"]["content"]
             response_dict = ast.literal_eval(response_message)
             result_qa_pair = [response_dict, qa_set]
@@ -97,6 +106,8 @@ def main():
     else:
         file = open(args.pred_path)
         pred_contents = [json.loads(line) for line in file]
+
+    # pred_contents = pred_contents[:900]
 
     # Dictionary to store the count of occurrences for each video_id
     video_id_counts = {}
@@ -135,13 +146,21 @@ def main():
         qa_set = {"q": question, "a": answer, "pred": pred}
         prediction_set[id] = qa_set
 
-    # # Set the OpenAI API key.
+    # Set the OpenAI API key.
     # openai.api_key = args.api_key # Your API key here
     # if args.api_base:
     #     openai.api_base = args.api_base # Your API base here
     global client
-    client = OpenAI(api_key=os.getenv("AI_API_KEY"), base_url=os.getenv("AI_BASE_URL"))
-    print(os.getenv('AI_MODEL'))
+    # client = OpenAI(api_key=os.getenv("AI_API_KEY"), base_url=os.getenv("AI_BASE_URL"))
+    # model_name = os.getenv('AI_MODEL')
+    # client = OpenAI(api_key="none", base_url="http://127.0.0.1:11434/v1")
+    # model_name = "qwen3:8b"
+    client = OpenAI(api_key="none", base_url="http://172.16.11.114:11434/v1")
+    model_name = "qwen3:30b-a3b-instruct-2507-q4_K_M"
+    # client = OpenAI(api_key="mQMWsqjDWrE7ZuB6ebZYiMtlkU0dW1d-OMnbn8r7gZ0", base_url="https://api.poe.com/v1")
+    # model_name = "GPT-3.5-Turbo"
+
+    print(model_name)
     num_tasks = args.num_tasks
 
     # While loop to ensure that all captions are processed.
@@ -164,7 +183,7 @@ def main():
             # Split tasks into parts.
             part_len = len(incomplete_files) // num_tasks
             all_parts = [incomplete_files[i:i + part_len] for i in range(0, len(incomplete_files), part_len)]
-            task_args = [(prediction_set, part, args.output_dir, os.getenv("AI_MODEL")) for part in all_parts]
+            task_args = [(prediction_set, part, args.output_dir, model_name) for part in all_parts]
 
             # Use a pool of workers to process the files in parallel.
             with Pool() as pool:

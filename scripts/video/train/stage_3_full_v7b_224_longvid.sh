@@ -1,6 +1,6 @@
 #!/bin/bash
 
-deepspeed llamavid/train/train_mem.py \
+deepspeed --include=localhost:0,5,6,7 llamavid/train/train_mem.py \
     --deepspeed ./scripts/zero2_offload.json \
     --model_name_or_path ./work_dirs/llama-vid-7b-full-224-video-fps-1 \
     --version imgsp_v1 \
@@ -38,6 +38,7 @@ deepspeed llamavid/train/train_mem.py \
     --tf32 True \
     --model_max_length 65536 \
     --gradient_checkpointing True \
-    --dataloader_num_workers 1 \
+    --dataloader_num_workers 0 \
+    --dataloader_pin_memory False \
     --lazy_preprocess True \
     --report_to wandb
