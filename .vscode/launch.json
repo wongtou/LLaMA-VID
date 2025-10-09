@@ -1,7 +1,6 @@
 {
   "version": "0.2.0",
   "configurations": [
-    
     {
       "name": "Debug model_vqa_loader.py",
       "type": "debugpy",
@@ -9,17 +8,55 @@
       "program": "${workspaceFolder}/llamavid/eval/model_vqa_loader.py",
       "console": "integratedTerminal",
       "args": [
-        "--model-path", "./work_dirs/llama-vid/llama-vid-7b-full-224",
-        "--question-file", "./data/LLaMA-VID-Eval/vizwiz/llava_test.jsonl",
-        "--image-folder", "./data/LLaMA-VID-Eval/vizwiz/test",
-        "--answers-file", "./data/LLaMA-VID-Eval/vizwiz/answers/llama-vid-7b-full-224/merge.jsonl",
-        "--num-chunks", "1",
-        "--chunk-idx", "0",
-        "--temperature", "0",
-        "--conv-mode", "vicuna_v1"
+        "--model-path",
+        "./work_dirs/llama-vid/llama-vid-7b-full-224",
+        "--question-file",
+        "./data/LLaMA-VID-Eval/vizwiz/llava_test.jsonl",
+        "--image-folder",
+        "./data/LLaMA-VID-Eval/vizwiz/test",
+        "--answers-file",
+        "./data/LLaMA-VID-Eval/vizwiz/answers/llama-vid-7b-full-224/merge.jsonl",
+        "--num-chunks",
+        "1",
+        "--chunk-idx",
+        "0",
+        "--temperature",
+        "0",
+        "--conv-mode",
+        "vicuna_v1"
       ],
       "env": {
         "CUDA_VISIBLE_DEVICES": "7"
+      },
+      "justMyCode": false
+    },
+    {
+      "name": "Debug model_msvd_qa.py",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/llamavid/eval/model_msvd_qa.py",
+      "console": "integratedTerminal",
+      "args": [
+        "--model-path",
+        "./work_dirs/llama-vid-7b-full-224-video-fps-1",
+        "--video_dir",
+        "./data/LLaMA-VID-Eval/MSVD-QA/video",
+        "--gt_file",
+        "./data/LLaMA-VID-Eval/MSVD-QA/test_qa.json",
+        "--output_dir",
+        "${workspaceFolder}/work_dirs/eval_msvd/llama-vid-7b-full-224-video-fps-1",
+        "--output_name",
+        "pred",
+        "--num-chunks",
+        "1",
+        "--chunk-idx",
+        "0",
+        "--conv-mode",
+        "vicuna_v1"
+      ],
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "7",
+        "PYTHONPATH": "${workspaceFolder}"
       },
       "justMyCode": false
     }
