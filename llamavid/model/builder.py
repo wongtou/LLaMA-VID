@@ -48,9 +48,20 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             cfg_pretrained = AutoConfig.from_pretrained(model_path)
             model = LlavaLlamaAttForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
 
-            mm_projector_weights = torch.load(os.path.join(model_path, 'mm_projector.bin'), map_location='cpu')
-            mm_projector_weights = {k: v.to(torch.float16) for k, v in mm_projector_weights.items()}
-            model.load_state_dict(mm_projector_weights, strict=False)
+            if 'lora' in model_name.lower():
+                # PEFT model
+                from peft import PeftModel
+                print(f"Loading LoRA weights from {model_path}")
+                model = PeftModel.from_pretrained(model, model_path)
+                print(f"Merging weights")
+                model = model.merge_and_unload()
+                print('Convert to FP16...')
+                model.to(device='cuda', dtype=torch.float16)
+            else:
+                mm_projector_weights = torch.load(os.path.join(model_path, 'mm_projector.bin'), map_location='cpu')
+                mm_projector_weights = {k: v.to(torch.float16) for k, v in mm_projector_weights.items()}
+                model.load_state_dict(mm_projector_weights, strict=False) 
+
         else:
             tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
             model = LlavaLlamaAttForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)

@@ -144,6 +144,18 @@ class LLaMAVIDMetaModel:
 
         if pretrain_mm_mlp_adapter is not None:
             att_projector_weights = torch.load(pretrain_mm_mlp_adapter, map_location='cpu')
+            # 去掉 base_model.model. 前缀，是为了把从LoRA训练流程导出的权重和当前模型模块的实际名字对齐
+            def strip_prefixes(weights):
+                prefixes = ["base_model.model.",]
+                cleaned = {}
+                for k, v in weights.items():
+                    new_key = k
+                    for prefix in prefixes:
+                        if new_key.startswith(prefix):
+                            new_key = new_key[len(prefix):]
+                    cleaned[new_key] = v
+                return cleaned
+            att_projector_weights = strip_prefixes(att_projector_weights)
         else:
             trainable_module = ['vlm_att_encoder', 'vlm_att_projector', 'vlm_att_key_projector', 
                                 'vlm_att_val_projector', 'vlm_att_query', 'vlm_att_visual_proj',
