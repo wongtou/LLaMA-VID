@@ -8,6 +8,7 @@ IFS=',' read -ra GPULIST <<< "$gpu_list"
 
 CHUNKS=${#GPULIST[@]}
 
+# CKPT="llama-vid-7b-full-224-video-fps-1-qlora-2e4"
 # CKPT="llama-vid/llama-vid-7b-full-224-video-fps-1"
 CKPT="llama-vid-7b-full-224-video-fps-1"
 # CKPT="llama-vid/llama-vid-7b-full-224-long-video"
@@ -15,19 +16,20 @@ CKPT="llama-vid-7b-full-224-video-fps-1"
 # OPENAIKEY=""
 # OPENAIBASE=""
 
-# for IDX in $(seq 0 $((CHUNKS-1))); do
-#     CUDA_VISIBLE_DEVICES=${GPULIST[$IDX]} python llamavid/eval/model_msvd_qa.py \
-#     --model-path ./work_dirs/$CKPT \
-#     --video_dir ./data/LLaMA-VID-Eval/MSVD-QA/video \
-#     --gt_file ./data/LLaMA-VID-Eval/MSVD-QA/test_qa.json \
-#     --output_dir ./work_dirs/eval_msvd/$CKPT \
-#     --output_name pred \
-#     --num-chunks $CHUNKS \
-#     --chunk-idx $IDX \
-#     --conv-mode vicuna_v1 &
-# done
+    # --model-base  ./model_zoo/LLM/vicuna/7B-V1.5 \
+for IDX in $(seq 0 $((CHUNKS-1))); do
+    CUDA_VISIBLE_DEVICES=${GPULIST[$IDX]} python llamavid/eval/model_msvd_qa.py \
+    --model-path ./work_dirs/$CKPT \
+    --video_dir ./data/LLaMA-VID-Eval/MSVD-QA/video \
+    --gt_file ./data/LLaMA-VID-Eval/MSVD-QA/test_qa.json \
+    --output_dir ./work_dirs/eval_msvd/$CKPT \
+    --output_name pred \
+    --num-chunks $CHUNKS \
+    --chunk-idx $IDX \
+    --conv-mode vicuna_v1 &
+done
 
-# wait
+wait
 
 python llamavid/eval/eval_msvd_qa.py \
     --pred_path ./work_dirs/eval_msvd/$CKPT \

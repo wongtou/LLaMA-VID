@@ -42,11 +42,11 @@ deepspeed --include=localhost:0,5,6,7 llamavid/train/train_mem.py \
     --report_to wandb
 
 export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:256"                  # 如果显存够用，或者offload模式，就不用设置这个
-deepspeed --include=localhost:0,5,6,7 llamavid/train/train_mem.py \
+deepspeed --include=localhost:0,1,2,3 llamavid/train/train_mem.py \
     --deepspeed ./scripts/zero2.json \
     --model_name_or_path model_zoo/LLM/vicuna/7B-V1.5 \
     --version imgsp_v1 \
-    --data_path ./data/LLaMA-VID-Finetune/llava_v1_5_mix665k_with_video_chatgpt.json \
+    --data_path ./data/LLaMA-VID-Finetune/llava_v1_5_mix665k_with_video_chatgpt_maxtime_5min.json \
     --image_folder ./data/LLaMA-VID-Finetune \
     --video_folder ./data/LLaMA-VID-Finetune \
     --vision_tower ./model_zoo/LAVIS/eva_vit_g.pth \
