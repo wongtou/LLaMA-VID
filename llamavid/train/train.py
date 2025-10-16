@@ -31,12 +31,25 @@ import torch
 
 import transformers
 
-from llamavid.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
+from llamavid.constants import (
+    IGNORE_INDEX,
+    IMAGE_TOKEN_INDEX,
+    DEFAULT_IMAGE_TOKEN,
+    DEFAULT_IM_START_TOKEN,
+    DEFAULT_IM_END_TOKEN,
+    VIDEO_START_SPECIAL_TOKEN,
+    VIDEO_END_SPECIAL_TOKEN,
+    IMAGE_START_TOKEN,
+    IMAGE_END_TOKEN,
+    NAVIGATION_SPECIAL_TOKEN,
+    IAMGE_SEPARATOR,
+    NAVIGATION_IDENTIFIER,
+)
 from torch.utils.data import Dataset
 from llamavid.train.llava_trainer import LLaVATrainer
 
 from llamavid import conversation as conversation_lib
-from llamavid.model import *
+from llamavid.model import resolve_model_architecture
 from llava.mm_utils import tokenizer_image_token
 
 from PIL import Image
@@ -54,6 +67,7 @@ def rank0_print(*args):
 @dataclass
 class ModelArguments:
     model_name_or_path: Optional[str] = field(default="facebook/opt-125m")
+    model_arch: Optional[str] = field(default="vid")
     version: Optional[str] = field(default="v0")
     freeze_backbone: bool = field(default=False)
     tune_mm_mlp_adapter: bool = field(default=False)
@@ -121,6 +135,7 @@ class TrainingArguments(transformers.TrainingArguments):
     lora_bias: str = "none"
     group_by_modality_length: bool = field(default=False)
     lr_multi: Optional[str] = field(default=None)
+    tune_vision_encoder: bool = field(default=False)
 
 
 def maybe_zero_3(param, ignore_status=False, name=None):
@@ -527,11 +542,12 @@ def preprocess_v1(
 
 
 def preprocess_imgsp_v1(
-    sources,
-    tokenizer: transformers.PreTrainedTokenizer,
-    has_image: bool = False,
-    img_token: str = '<image>',
-    refine_prompt: bool = False,
+        sources,
+        tokenizer: transformers.PreTrainedTokenizer,
+        has_image: bool = False,
+        img_token: str = '<image>',
+        refine_prompt: bool = False,
+        video_or_not: bool = False,
 ) -> Dict:
     conv = conversation_lib.default_conversation.copy()
     roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
@@ -549,10 +565,10 @@ def preprocess_imgsp_v1(
         for j, sentence in enumerate(source):
             role = roles[sentence["from"]]
             assert role == conv.roles[j % 2], f"{i}"
-            
+
             # add guided prompt
-            if role==conv.roles[0]:
-                guided_sent = sentence["value"].replace(DEFAULT_IMAGE_TOKEN, '').replace('\n', '')
+            if role == conv.roles[0]:
+                guided_sent = (sentence["value"].replace(DEFAULT_IMAGE_TOKEN, '').replace('\n', ''))
                 if refine_prompt:
                     # only keep the useful part of the prompt
                     if '\n' in guided_sent:
@@ -565,21 +581,68 @@ def preprocess_imgsp_v1(
             if img_token in sentence["value"]:
                 img_in_text = True
             # add image token to all sentence if multimoal input
-            if role==conv.roles[0] and img_in_text and img_token not in sentence["value"]:
+            if role == conv.roles[0] and img_in_text and img_token not in sentence["value"]:
                 # randomly add image token to the beginning or end of the sentence
-                if random.randint(0,1)==0:
+                if random.randint(0, 1) == 0:
                     img_conv = img_token + '\n' + sentence["value"]
                 else:
                     img_conv = sentence["value"] + '\n' + img_token
-                
+
                 conv.append_message(role, img_conv)
             else:
                 conv.append_message(role, sentence["value"])
         conversations.append(conv.get_prompt())
 
+    image_start_special_token = tokenizer(IMAGE_START_TOKEN, return_tensors="pt").input_ids[0][1:]
+    image_end_special_token = tokenizer(IMAGE_END_TOKEN, return_tensors="pt").input_ids[0][1:]
+    video_start_special_token = tokenizer(VIDEO_START_SPECIAL_TOKEN, return_tensors="pt").input_ids[0][1:]
+    video_end_special_token = tokenizer(VIDEO_END_SPECIAL_TOKEN, return_tensors="pt").input_ids[0][1:]
+    navigation_special_token = tokenizer(NAVIGATION_SPECIAL_TOKEN, return_tensors="pt").input_ids[0][1:]
+    image_seperator = tokenizer(IAMGE_SEPARATOR, return_tensors="pt").input_ids[0][1:]
+
     # Tokenize conversations
     if has_image:
-        input_ids = torch.stack([tokenizer_image_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations], dim=0)
+        # input_ids_ = torch.stack([tokenizer_image_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations], dim=0)
+        new_list_all = []
+        for prompt in conversations:
+            token_prompt = tokenizer_image_token(prompt, tokenizer, return_tensors='pt')
+            indices_to_replace = torch.where(token_prompt == -200)[0]
+            new_list = []
+            while indices_to_replace.numel() > 0:
+                idx = indices_to_replace[0]
+                if video_or_not:
+                    
+                    if NAVIGATION_IDENTIFIER in prompt:
+                        new_list.append(token_prompt[:idx])
+                        new_list.append(video_start_special_token)
+                        new_list.append(image_seperator)
+                        new_list.append(token_prompt[idx:idx + 1])
+                        new_list.append(video_end_special_token)
+                        new_list.append(image_start_special_token)
+                        new_list.append(image_end_special_token)
+                        new_list.append(navigation_special_token)
+                        token_prompt = token_prompt[idx + 1:]
+                        
+                    else:
+                        new_list.append(token_prompt[:idx])
+                        new_list.append(video_start_special_token)
+                        new_list.append(image_seperator)
+                        new_list.append(token_prompt[idx:idx + 1])
+                        new_list.append(video_end_special_token)
+                        token_prompt = token_prompt[idx + 1:]
+                        
+                else:
+                    new_list.append(token_prompt[:idx])
+                    new_list.append(image_start_special_token)
+                    new_list.append(token_prompt[idx:idx + 1])
+                    new_list.append(image_end_special_token)
+                    token_prompt = token_prompt[idx + 1:]
+                indices_to_replace = torch.where(token_prompt == -200)[0]
+            if token_prompt.numel() > 0:
+                new_list.append(token_prompt)
+            new_list_all.append(torch.cat(new_list, dim=0))
+        input_ids = torch.stack(new_list_all, dim=0)
+    
     else:
         input_ids = tokenizer(
             conversations,
@@ -611,30 +674,46 @@ def preprocess_imgsp_v1(
             parts[0] += sep
 
             if has_image:
-                round_len = len(tokenizer_image_token(rou, tokenizer))
-                instruction_len = len(tokenizer_image_token(parts[0], tokenizer)) - 2
+                ## video
+                if NAVIGATION_IDENTIFIER not in conversation and video_or_not:
+                    round_len = len(tokenizer_image_token(rou, tokenizer)) + 3
+                    instruction_len = len(tokenizer_image_token(parts[0], tokenizer)) + 3 - 2
+                ## image
+                elif NAVIGATION_IDENTIFIER not in conversation and not video_or_not:
+                    round_len = len(tokenizer_image_token(rou, tokenizer)) + 2
+                    instruction_len = len(tokenizer_image_token(parts[0], tokenizer)) + 2 - 2
+                    
+                ## navigation video
+                elif NAVIGATION_IDENTIFIER in conversation and video_or_not:
+                    round_len = len(tokenizer_image_token(rou, tokenizer)) + 6
+                    instruction_len = len(tokenizer_image_token(parts[0], tokenizer)) + 6 - 2
+                    
+                else:
+                    print(f"converstation:{conversation}, video_or_not:{video_or_not}, identifier: {NAVIGATION_IDENTIFIER in conversation}")
+                    raise ValueError
+                    
             else:
                 round_len = len(tokenizer(rou).input_ids)
                 instruction_len = len(tokenizer(parts[0]).input_ids) - 2
 
-            target[cur_len : cur_len + instruction_len] = IGNORE_INDEX
+            target[cur_len: cur_len + instruction_len] = IGNORE_INDEX
 
             cur_len += round_len
         target[cur_len:] = IGNORE_INDEX
 
         if cur_len < tokenizer.model_max_length:
             if cur_len != total_len:
-                target[:] = IGNORE_INDEX
+                # target[:] = IGNORE_INDEX
                 print(
-                    f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}."
+                    f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}. converstation:{conversation}, target:{target}, input_id:{input_ids} video_or_not:{video_or_not}, identifier: {NAVIGATION_IDENTIFIER in conversation}  "
                     f" (ignored)"
                 )
-
     return dict(
         input_ids=input_ids,
         labels=targets,
         prompt=guided_prompt,
     )
+
 
 def preprocess_mpt(
     sources,
@@ -727,6 +806,7 @@ def preprocess_plain_guided(
     sources: Sequence[str],
     tokenizer: transformers.PreTrainedTokenizer,
     prompt: str = None,
+    video_or_not: bool = False,
 ) -> Dict:
     # add end signal and concatenate together
     guided_prompt = []
@@ -739,10 +819,45 @@ def preprocess_plain_guided(
         conversation = source[0]['value'] + source[1]['value'] + conversation_lib.default_conversation.sep
         conversations.append(conversation)
     # tokenize conversations
-    input_ids = [tokenizer_image_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations]
+    # input_ids = [tokenizer_image_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations]
+    image_start_special_token = tokenizer(IMAGE_START_TOKEN, return_tensors="pt").input_ids[0][1:]
+    image_end_special_token = tokenizer(IMAGE_END_TOKEN, return_tensors="pt").input_ids[0][1:]
+    video_start_special_token = tokenizer(VIDEO_START_SPECIAL_TOKEN, return_tensors="pt").input_ids[0][1:]
+    video_end_special_token = tokenizer(VIDEO_END_SPECIAL_TOKEN, return_tensors="pt").input_ids[0][1:]
+    image_seperator = tokenizer(IAMGE_SEPARATOR, return_tensors="pt").input_ids[0][1:]
+    new_list_all = []
+    for prompt in conversations:
+        token_prompt = tokenizer_image_token(prompt, tokenizer, return_tensors='pt')
+        indices_to_replace = torch.where(token_prompt == -200)[0]
+        new_list = []
+        while indices_to_replace.numel() > 0:
+            idx = indices_to_replace[0]
+            if video_or_not:
+                new_list.append(token_prompt[:idx])
+                new_list.append(video_start_special_token)
+                new_list.append(image_seperator)
+                new_list.append(token_prompt[idx:idx + 1])
+                new_list.append(video_end_special_token)
+                token_prompt = token_prompt[idx + 1:]
+            else:
+                new_list.append(token_prompt[:idx])
+                new_list.append(image_start_special_token)
+                new_list.append(token_prompt[idx:idx + 1])
+                new_list.append(image_end_special_token)
+                token_prompt = token_prompt[idx + 1:]
+            indices_to_replace = torch.where(token_prompt == -200)[0]
+        if token_prompt.numel() > 0:
+            new_list.append(token_prompt)
+        new_list_all.append(torch.cat(new_list, dim=0))
+    input_ids = torch.stack(new_list_all, dim=0)
+
     targets = copy.deepcopy(input_ids)
     for target, source in zip(targets, sources):
-        tokenized_len = len(tokenizer_image_token(source[0]['value'], tokenizer))
+        # tokenized_len = len(tokenizer_image_token(source[0]['value'], tokenizer))
+        if video_or_not:
+            tokenized_len = len(tokenizer_image_token(source[0]['value'], tokenizer)) + 3
+        else:
+            tokenized_len = len(tokenizer_image_token(source[0]['value'], tokenizer)) + 2
         target[:tokenized_len] = IGNORE_INDEX
 
     return dict(input_ids=input_ids, labels=targets, prompt=guided_prompt)
@@ -753,6 +868,7 @@ def preprocess(
     has_image: bool = False,
     prompt: str = None,
     refine_prompt: bool = False,
+    video_or_not: bool = False,
 ) -> Dict:
     """
     Given a list of sources, each is a conversation list. This transform:
@@ -762,7 +878,7 @@ def preprocess(
     4. Make a deepcopy as the target. Mask human words with IGNORE_INDEX.
     """
     if conversation_lib.default_conversation.version.startswith("plain_guided"):
-        return preprocess_plain_guided(sources, tokenizer, prompt=prompt)
+        return preprocess_plain_guided(sources, tokenizer, prompt=prompt, video_or_not=video_or_not)
     elif conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.PLAIN:
         return preprocess_plain(sources, tokenizer)
     if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.LLAMA_2:
@@ -770,7 +886,7 @@ def preprocess(
     if conversation_lib.default_conversation.version.startswith("v1"):
         return preprocess_v1(sources, tokenizer, has_image=has_image)
     elif conversation_lib.default_conversation.version.startswith("imgsp"):
-        return preprocess_imgsp_v1(sources, tokenizer, has_image=has_image, refine_prompt=refine_prompt)
+        return preprocess_imgsp_v1(sources, tokenizer, has_image=has_image, refine_prompt=refine_prompt, video_or_not=video_or_not)
     if conversation_lib.default_conversation.version == "mpt":
         return preprocess_mpt(sources, tokenizer)
     # add end signal and concatenate together
@@ -854,11 +970,6 @@ class LazySupervisedDataset(Dataset):
                         if 'ocr' in image_file:
                             if not os.path.exists(os.path.join(image_folder, image_file)):
                                 image_file = image_file.replace(".jpg", ".png")
-
-                        # # convert image for VG dataset
-                        # elif 'VG_100K' in image_file:
-                        #     image_file = image_file.replace('VG_100K_2', 'images')
-                        #     image_file = image_file.replace('VG_100K', 'images')
                     
                     image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
                     if self.data_args.image_aspect_ratio == 'pad':
@@ -880,7 +991,7 @@ class LazySupervisedDataset(Dataset):
                         image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
                     sources = preprocess_multimodal(
                         copy.deepcopy([e["conversations"] for e in sources]),
-                        self.data_args)
+                        self.data_args,)
                 elif 'video' in sources[0]:
                     video_file = self.list_data_dict[i]['video']
                     video_folder = self.data_args.video_folder
@@ -908,7 +1019,7 @@ class LazySupervisedDataset(Dataset):
                         image = processor.preprocess(video, return_tensors='pt')['pixel_values']
                         sources = preprocess_multimodal(
                             copy.deepcopy([e["conversations"] for e in sources]),
-                            self.data_args)
+                            self.data_args,)
                 else:
                     sources = copy.deepcopy([e["conversations"] for e in sources])
                 
@@ -925,7 +1036,8 @@ class LazySupervisedDataset(Dataset):
             self.tokenizer,
             has_image=has_image,
             prompt=self.data_args.input_prompt,
-            refine_prompt=self.data_args.refine_prompt)
+            refine_prompt=self.data_args.refine_prompt,
+            video_or_not='video' in self.list_data_dict[i])
         
         if 'prompt' in data_dict:
             prompt = data_dict['prompt']
@@ -952,7 +1064,7 @@ class LazySupervisedDataset(Dataset):
         # prompt exist in the data
         if prompt is not None:
             data_dict['prompt'] = prompt
-        
+
         return data_dict
 
 
@@ -993,8 +1105,7 @@ class DataCollatorForSupervisedDataset(object):
         return batch
 
 
-def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,
-                                data_args) -> Dict:
+def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, data_args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
     train_dataset = LazySupervisedDataset(tokenizer=tokenizer,
                                 data_path=data_args.data_path,
@@ -1047,7 +1158,9 @@ def train():
             config.rope_scaling = {"type": "linear", "factor": scaling_factor}
 
     if model_args.vision_tower is not None:
-        model = LlavaLlamaAttForCausalLM.from_pretrained(
+        arch_source = model_args.model_arch or model_args.model_name_or_path
+        model_cls = resolve_model_architecture(arch_source)
+        model = model_cls.from_pretrained(
             model_args.model_name_or_path,
             config=config,
             cache_dir=training_args.cache_dir,
@@ -1155,6 +1268,9 @@ def train():
             for p in model.get_model().mm_projector.parameters():
                 p.requires_grad = False
 
+        if training_args.tune_vision_encoder:
+            vision_tower.requires_grad_(True)
+
         if training_args.bits in [4, 8]:
             model.get_model().mm_projector.to(dtype=compute_dtype, device=training_args.device)
 
@@ -1163,7 +1279,7 @@ def train():
         model.config.mm_use_im_patch_token = model_args.mm_use_im_patch_token
         model.initialize_vision_tokenizer(model_args, tokenizer=tokenizer)
 
-    # all the attention modules require grad
+    # all the attention modules require
     model.get_model().initialize_attention_modules(model_args)
 
     if training_args.bits in [4, 8]:

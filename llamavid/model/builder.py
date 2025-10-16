@@ -19,7 +19,7 @@ import shutil
 
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, BitsAndBytesConfig
 import torch
-from llamavid.model import *
+from llamavid.model import resolve_model_architecture
 from llamavid.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
 
@@ -39,6 +39,8 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
     else:
         kwargs['torch_dtype'] = torch.float16
 
+    model_cls = resolve_model_architecture(model_name)
+
     if 'vid' in model_name.lower():
         # Load LLaMA-VID model
         if model_base is not None:
@@ -46,7 +48,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             print('Loading LLaVA from base model...')
             tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
             cfg_pretrained = AutoConfig.from_pretrained(model_path)
-            model = LlavaLlamaAttForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
+            model = model_cls.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
 
             if 'lora' in model_name.lower():
                 # PEFT model
@@ -64,7 +66,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
 
         else:
             tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
-            model = LlavaLlamaAttForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
+            model = model_cls.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
 
     else:
         # Load language model
