@@ -47,12 +47,12 @@ deepspeed llamavid/train/train_mem.py \
     --deepspeed ./scripts/zero2.json \
     --model_name_or_path model_zoo/LLM/vicuna/7B-V1.5 \
     --version imgsp_v1 \
-    --data_path ./data/LLaMA-VID-Finetune/llava_v1_5_mix665k_with_video_chatgpt_maxtime_5min.json \
+    --data_path ./data/LLaMA-VID-Finetune/llava_v1_5_mix665k_with_video_chatgpt_navid_vlnce_r2r.json \
     --image_folder ./data/LLaMA-VID-Finetune \
     --video_folder ./data/LLaMA-VID-Finetune \
     --vision_tower ./model_zoo/LAVIS/eva_vit_g.pth \
     --image_processor ./llamavid/processor/clip-patch14-224 \
-    --pretrain_mm_mlp_adapter ./work_dirs/llama-vid-7b-pretrain-224-video-fps-1/mm_projector.bin \
+    --pretrain_mm_mlp_adapter ./work_dirs/llama-vid-7b-pretrain-224-video-fps-1-navid/mm_projector.bin \
     --mm_projector_type mlp2x_gelu \
     --mm_vision_select_layer -2 \
     --mm_use_im_start_end False \
@@ -64,7 +64,7 @@ deepspeed llamavid/train/train_mem.py \
     --num_query 32 \
     --compress_type "grid:2" \
     --bf16 True \
-    --output_dir ./work_dirs/llama-vid-7b-full-224-video-fps-1-qlora-2e5  \
+    --output_dir ./work_dirs/llama-vid-7b-full-224-video-fps-1-qlora-2e5-navid-r2r \
     --num_train_epochs 1 \
     --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 1 \
